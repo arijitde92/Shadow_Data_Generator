@@ -1,10 +1,11 @@
+import argparse
 import open3d as o3d
 import numpy as np
 import os
-import glob
+from glob import glob
 from tqdm import tqdm
 from time import time
-import subprocess
+import random
 import pandas as pd
 
 COLOR_MAP = {
@@ -17,13 +18,14 @@ COLOR_MAP = {
     (30, 190, 192): 'wallagg',
     (255, 0, 255): 'window',
     (0, 0, 0): 'stairs',
-    (50, 2000, 150): 'clutter',
+    (50, 200, 150): 'clutter',
     (255, 128, 0): 'busbar',
     (153, 0, 0): 'cable',
     (127, 0, 255): 'duct',
     (255, 153, 255): 'pipe',
     (192, 192, 192): 'curvedagg'
 }
+
 
 def sub_sample_cloud(input_file: str, output_dir: str):
     os.makedirs(output_dir, exist_ok=True)
@@ -43,6 +45,20 @@ def sub_sample_cloud(input_file: str, output_dir: str):
         with open(output_file, "w") as outfile:
             # Filter lines where the line number modulo 40 equals mod_value
             outfile.writelines(line for idx, line in enumerate(lines, start=1) if idx % 100 == mod_value)
+
+
+def merge_shadow_clouds_randomly(input_dir: str, area_name: str, output_dir: str, num_files_to_merge: int = 5):
+    shadow_files = glob(input_dir + os.sep + area_name + os.sep + "*.txt")
+    selected_files = random.sample(shadow_files, num_files_to_merge)
+    merge_dfs = []
+    for selected_file in selected_files:
+        df = pd.read_csv(selected_file, sep=" ", header=None, names=['x', 'y', 'z', 'r', 'g', 'b', 'label', 'element'])
+        merge_dfs.append(df)
+    final_df = pd.concat(merge_dfs, ignore_index=True)
+    output_path = os.path.join(output_dir, area_name)
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
+    final_df.to_csv(os.path.join(output_path, f"{area_name}.txt"), header=False, index=False, sep=' ')
 
 
 def create_shadow_data(area_name: str, sub_sampled_dir: str, output_dir: str, interval: int = 15, radius: int = 10000):
@@ -149,137 +165,55 @@ def get_file_name(file_path: str) -> str:
     return os.path.basename(file_path).split('.')[0]
 
 
-def get_max_min_dim(file_path: str, dim_size=0.01):
-    if os.path.exists(file_path):
-        df = pd.read_csv(file_path, skiprows=1, encoding="gbk", engine='python', sep=' ', delimiter=None,
-                         index_col=False, header=None, skipinitialspace=True)
+if __name__ == '__main__':
+    # Argument parser setup
+    parser = argparse.ArgumentParser(description="Process point cloud data and generate shadow data.")
+    parser.add_argument("-r", "--MASTER_ROOT", type=str, default="Master",
+                        help="Root directory containing master data.")
+    parser.add_argument("-o", "--shadow_output_dir", type=str, default="Shadow_Master",
+                        help="Output directory for shadow data.")
+    args = parser.parse_args()
 
-        xMin = df[0].min()
-        xMax = df[0].max()
-        xDim = xMax - xMin
-        xMinLimit = xMin - (xDim * dim_size)
-        xMaxLimit = xMax + (xDim * dim_size)
+    MASTER_ROOT = args.MASTER_ROOT
+    shadow_output_dir = args.shadow_output_dir
+    sub_sampled_dir = "sub_sampled"
+    shadow_files_dir = "Shadow"
 
-        yMin = df[1].min()
-        yMax = df[1].max()
-        yDim = yMax - yMin
-        yMinLimit = yMin - (yDim * dim_size)
-        yMaxLimit = yMax + (yDim * dim_size)
+    AREAS = os.listdir(MASTER_ROOT)
+    master_files = []
+    for area in AREAS:
+        files = os.listdir(os.path.join(MASTER_ROOT, area))
+        for master_file in files:
+            if master_file == area + '.txt':
+                master_files.append(os.path.join(MASTER_ROOT, area, master_file))
+    print(f"Found {len(master_files)} files from {len(AREAS)} areas in {MASTER_ROOT}")
 
-        zMin = df[2].min()
-        zMax = df[2].max()
-        zDim = zMax - zMin
-        zMinLimit = zMin - (zDim * dim_size)
-        zMaxLimit = zMax + (zDim * dim_size)
-
-        # print(xMinLimit, xMaxLimit, yMinLimit, yMaxLimit, zMinLimit, zMaxLimit)
-        limits = []
-        limits.append(xMinLimit)
-        limits.append(xMaxLimit)
-        limits.append(yMinLimit)
-        limits.append(yMaxLimit)
-        limits.append(zMinLimit)
-        limits.append(zMaxLimit)
-        suffix = file_path + '.txt'
-        with open(suffix, 'w') as file:
-            for limit in limits:
-                file.write(str(limit))
-                file.write(' ')
-
-
-def extract_pcd_from_mesh(area_name: str, fbx_dir: str, fbx_classes: list, temp_folder: str, output_dir: str):
-    # Define paths
-    cloud_compare_path = r"c:\Program Files\CloudCompare\CloudCompare.exe"
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    os.makedirs(temp_folder, exist_ok=True)
-    for fbx_class in fbx_classes:
-        print("Extracting from ", fbx_class)
-        # Loop through all .fbx files in the input folder
-        fbx_files = glob.glob(os.path.join(fbx_dir, fbx_class, "*.fbx"))
-        if len(fbx_files) > 0:
-            print("Found {} fbx files for class {}".format(len(fbx_files), fbx_class))
-            for fbx_file in tqdm(fbx_files):
-                file_name = get_file_name(fbx_file)
-                # Generate intermediate filenames
-                merged_bin = os.path.join(temp_folder, file_name + "_merged.bin")
-                csv_file = os.path.join(temp_folder, file_name + ".csv")
-
-                # Step 1: Sample mesh and generate merged binary
-                subprocess.run([
-                    cloud_compare_path, "-silent", "-auto_save", "off", "-o", fbx_file,
-                    "-sample_mesh", "density", "500", "-merge_clouds", "-save_clouds",
-                    "file", merged_bin, "-clear", "-o", merged_bin,
-                    "-c_export_fmt", "asc", "-add_header", "-ext", "csv", "-save_clouds", "file", csv_file
-                ])
-
-                get_max_min_dim(csv_file)
-
-                # Read the modified CSV file and process tokens
-                txt_file = f"{csv_file}.txt"
-                if os.path.exists(txt_file):
-                    with open(txt_file, "r") as file:
-                        for line in file:
-                            tokens = line.split()  # Split line into tokens
-                            if len(tokens) >= 6:
-                                a, b, c, d, e, f = tokens[:6]
-
-                                # Step 3: Crop and save cropped binary
-                                cropped_bin = os.path.join(temp_folder, file_name + "_cropped.bin")
-                                consolidated_bin = area_name + "_consolidated.bin"
-                                subprocess.run([
-                                    cloud_compare_path, "-silent", "-auto_save", "off",
-                                    "-o", consolidated_bin, "-crop",
-                                    f"{a}:{c}:{e}:{b}:{d}:{f}", "-save_clouds", "file", cropped_bin
-                                ])
-
-                                # Step 4: Export cropped binary to .pts format
-                                output_path = os.path.join(output_dir, area_name + ".pts")
-                                subprocess.run([
-                                    cloud_compare_path, "-silent", "-auto_save", "off",
-                                    "-o", cropped_bin, "-c_export_fmt", "asc",
-                                    "-add_header", "-ext", "pts", "-save_clouds", "file", output_path
-                                ])
-
-
-MASTER_ROOT = "Master"
-sub_sampled_dir = "sub_sampled"
-shadow_output_dir = "Shadow"
-# final_output_dir = "Shadow"
-# fbx_dir = "Fbx_Floor"
-# fbx_classes = ['floor', 'beam', 'roof', 'wall', 'column', 'door', 'window', 'busbar', 'cable', 'duct', 'pipe']
-
-AREAS = os.listdir(MASTER_ROOT)
-master_files = []
-for area in AREAS:
-    files = os.listdir(os.path.join(MASTER_ROOT, area))
-    for master_file in files:
-        if master_file == area + '.txt':
-            print(master_file)
-            # subprocess.run([r"C:\Program Files\CloudCompare\CloudCompare.exe", "-VERBOSITY", "1", "-auto_save", "off",
-            #                 "-o", os.path.join(MASTER_ROOT, area, master_file), "-save_clouds", "file",
-            #                 f"{area}_consolidated.bin"])
-            master_files.append(os.path.join(MASTER_ROOT, area, master_file))
-print(f"Found {len(master_files)} files from {len(AREAS)} areas in {MASTER_ROOT}")
-
-failures = []
-for master_file in master_files:
-    start_time = time()
-    area_name = get_file_name(master_file)
-    print("Subsampling", master_file)
-    sub_sample_cloud(master_file, str(os.path.join(sub_sampled_dir, area_name)))
-    print("Creating shadow pcd of", master_file)
-    try:
-        create_shadow_data(area_name, str(os.path.join(sub_sampled_dir, area_name)), shadow_output_dir)
-        end_time = time()
-        elapsed_time = (end_time - start_time) / 60  # in minutes
-        print("Shadow data of {} created in {} minutes".format(master_file, elapsed_time))
-    except Exception as e:
-        failures.append(master_file)
-        continue
-    # print("Creating final Shadow data of {} with RGB fields".format(master_file))
-    # extract_pcd_from_mesh(area_name, fbx_dir, fbx_classes, "temp_data", final_output_dir)
-if len(failures) > 0:
-    print("Failed to create shadow data for")
-    for failure in failures:
-        print(failure)
+    failures = []
+    for master_file in master_files:
+        area_name = get_file_name(master_file)
+        print("Subsampling", master_file)
+        start = time()
+        sub_sample_cloud(master_file, str(os.path.join(sub_sampled_dir, area_name)))
+        sampling_time = (time() - start)/60
+        print(f"Subsampling completed in {sampling_time:.2f} minutes")
+        print("Creating shadow pcd of", master_file)
+        try:
+            start = time()
+            create_shadow_data(area_name, str(os.path.join(sub_sampled_dir, area_name)), shadow_files_dir)
+            end_time = time()
+            shadow_elapsed_time = (end_time - start) / 60  # in minutes
+            print("Shadow data of {} created in {:.2f} minutes".format(master_file, shadow_elapsed_time))
+            print("Merging point clouds randomly")
+            start = time()
+            merge_shadow_clouds_randomly(shadow_files_dir, area_name, shadow_output_dir)
+            merge_elapsed_time = (time() - start)/60
+            print("Merging completed in {:.2f} minutes".format(merge_elapsed_time))
+        except Exception as e:
+            print(e)
+            failures.append(master_file)
+            continue
+    if len(failures) > 0:
+        print("Failed to create shadow data for")
+        for failure in failures:
+            print(failure)
+    print("Process completed in {:.2f} minutes".format(sampling_time + shadow_elapsed_time + merge_elapsed_time))

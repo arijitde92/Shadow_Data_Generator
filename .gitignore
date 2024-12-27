@@ -169,3 +169,8 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+Master
+Shadow
+shadow_xyz
+sub_sampled

@@ -61,7 +61,7 @@ def merge_shadow_clouds_randomly(input_dir: str, area_name: str, output_dir: str
     final_df.to_csv(os.path.join(output_path, f"{area_name}.txt"), header=False, index=False, sep=' ')
 
 
-def create_shadow_data(area_name: str, sub_sampled_dir: str, output_dir: str, interval: int = 15, radius: int = 10000):
+def create_shadow_data(area_name: str, sub_sampled_dir: str, output_dir: str, interval: int = 40, radius: int = 10000):
     def check_dimensions(pcd):
         size = pcd.get_max_bound() - pcd.get_min_bound()
         if size[0] // interval < 2.0 or size[1] // interval < 2.0 or size[2] // interval < 2.0:
@@ -91,6 +91,7 @@ def create_shadow_data(area_name: str, sub_sampled_dir: str, output_dir: str, in
         try:
             points = np.asarray(point_cloud.points)
             colors = np.asarray(point_cloud.colors) * 255.0  # Denormalize to [0, 255]
+            colors = colors.astype(np.uint8)
             data = np.hstack((points, colors))
 
             # Create a pandas DataFrame
@@ -114,7 +115,7 @@ def create_shadow_data(area_name: str, sub_sampled_dir: str, output_dir: str, in
             print(e)
 
     pcds = []
-    size_ok = False
+    size_ok = True
     for sub_sampled_file in os.listdir(sub_sampled_dir):
         if not size_ok:
             size_ok = check_dimensions(
@@ -131,12 +132,12 @@ def create_shadow_data(area_name: str, sub_sampled_dir: str, output_dir: str, in
         print("Building Size [x, y, z]: {}".format(building_size))
         diameter = np.linalg.norm(np.asarray(pcds[0].get_max_bound()) - np.asarray(pcds[0].get_min_bound()))
         radius = 100 * diameter
-        z_pts = np.array([5, 15])  # manual
+        z_pts = np.array([5, 15, 25, 35])  # manual
         # z_pts = interval * np.arange(building_size[2] // interval)[1:]
-        # y_pts = interval * np.arange(building_size[1] // interval)[1:]
-        y_pts = np.array([30, 60, 90, 120, 150, 180, 210])
-        # x_pts = interval * np.arange(building_size[0] // interval)[1:]
-        x_pts = np.array([20])
+        y_pts = interval * np.arange(building_size[1] // interval)[1:]
+        # y_pts = np.array([30, 60, 90, 120, 150, 180, 210])
+        x_pts = interval * np.arange(building_size[0] // interval)[1:]
+        # x_pts = np.array([20])
         print("x intervals at ", x_pts)
         print("y intervals at ", y_pts)
         print("z intervals at ", z_pts)
@@ -164,6 +165,12 @@ def create_shadow_data(area_name: str, sub_sampled_dir: str, output_dir: str, in
 def get_file_name(file_path: str) -> str:
     return os.path.basename(file_path).split('.')[0]
 
+def split_master_into_labels(master_dir: str):
+    areas = os.listdir(master_dir)
+    for area in areas:
+        master_file = os.path.join(master_dir, area, area+".txt")
+        df = pd.read_csv
+
 
 if __name__ == '__main__':
     # Argument parser setup
@@ -172,6 +179,7 @@ if __name__ == '__main__':
                         help="Root directory containing master data.")
     parser.add_argument("-o", "--shadow_output_dir", type=str, default="Shadow_Master",
                         help="Output directory for shadow data.")
+    parser.add_argument("-a", "--areas", type=str, nargs='+', help="List of area names to process.")
     args = parser.parse_args()
 
     MASTER_ROOT = args.MASTER_ROOT
@@ -179,14 +187,18 @@ if __name__ == '__main__':
     sub_sampled_dir = "sub_sampled"
     shadow_files_dir = "Shadow"
 
-    AREAS = os.listdir(MASTER_ROOT)
+    areas = args.areas
     master_files = []
-    for area in AREAS:
-        files = os.listdir(os.path.join(MASTER_ROOT, area))
-        for master_file in files:
-            if master_file == area + '.txt':
-                master_files.append(os.path.join(MASTER_ROOT, area, master_file))
-    print(f"Found {len(master_files)} files from {len(AREAS)} areas in {MASTER_ROOT}")
+    for area in areas:
+        try:
+            files = os.listdir(os.path.join(MASTER_ROOT, area))
+            for master_file in files:
+                if master_file == area + '.txt':
+                    master_files.append(os.path.join(MASTER_ROOT, area, master_file))
+        except FileNotFoundError as e:
+            print(e)
+            continue
+    print(f"Found {len(master_files)} files from {len(areas)} areas in {MASTER_ROOT}")
 
     failures = []
     for master_file in master_files:
@@ -199,7 +211,7 @@ if __name__ == '__main__':
         print("Creating shadow pcd of", master_file)
         try:
             start = time()
-            create_shadow_data(area_name, str(os.path.join(sub_sampled_dir, area_name)), shadow_files_dir)
+            create_shadow_data(area_name, str(os.path.join(sub_sampled_dir, area_name)), shadow_files_dir, interval=40)
             end_time = time()
             shadow_elapsed_time = (end_time - start) / 60  # in minutes
             print("Shadow data of {} created in {:.2f} minutes".format(master_file, shadow_elapsed_time))

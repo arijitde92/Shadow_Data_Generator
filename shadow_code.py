@@ -166,10 +166,16 @@ def get_file_name(file_path: str) -> str:
     return os.path.basename(file_path).split('.')[0]
 
 def split_master_into_labels(master_dir: str):
+    print("Creating label-wise files")
     areas = os.listdir(master_dir)
     for area in areas:
         master_file = os.path.join(master_dir, area, area+".txt")
-        df = pd.read_csv
+        print("Processing", master_file)
+        df = pd.read_csv(master_file, sep=" ", header=None, names=['x', 'y', 'z', 'r', 'g', 'b', 'label', 'element'])
+        for label in df['label'].unique():
+            label_df = df[df['label'] == label]
+            output_dir = os.path.join(master_dir, area)
+            label_df.to_csv(os.path.join(output_dir, area+f"_{label}.txt"), header=False, index=False, sep=' ')
 
 
 if __name__ == '__main__':
@@ -228,4 +234,6 @@ if __name__ == '__main__':
         print("Failed to create shadow data for")
         for failure in failures:
             print(failure)
+    else:
+        split_master_into_labels(shadow_output_dir)
     print("Process completed in {:.2f} minutes".format(sampling_time + shadow_elapsed_time + merge_elapsed_time))

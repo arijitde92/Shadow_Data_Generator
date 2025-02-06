@@ -181,11 +181,12 @@ def split_master_into_labels(master_dir: str):
 if __name__ == '__main__':
     # Argument parser setup
     parser = argparse.ArgumentParser(description="Process point cloud data and generate shadow data.")
-    parser.add_argument("-r", "--MASTER_ROOT", type=str, default="Master",
+    parser.add_argument("-m", "--MASTER_ROOT", type=str, default="Master",
                         help="Root directory containing master data.")
     parser.add_argument("-o", "--shadow_output_dir", type=str, default="Shadow_Master",
                         help="Output directory for shadow data.")
     parser.add_argument("-a", "--areas", type=str, nargs='+', help="List of area names to process.")
+    parser.add_argument("-r", "--randomness", type=int, default=5, choices=range(1,21), help="Number of sub sampled files to select randomly to merge into final shadow master. Range [1,20]")
     args = parser.parse_args()
 
     MASTER_ROOT = args.MASTER_ROOT
@@ -223,7 +224,7 @@ if __name__ == '__main__':
             print("Shadow data of {} created in {:.2f} minutes".format(master_file, shadow_elapsed_time))
             print("Merging point clouds randomly")
             start = time()
-            merge_shadow_clouds_randomly(shadow_files_dir, area_name, shadow_output_dir)
+            merge_shadow_clouds_randomly(shadow_files_dir, area_name, shadow_output_dir, args.randomness)
             merge_elapsed_time = (time() - start)/60
             print("Merging completed in {:.2f} minutes".format(merge_elapsed_time))
         except Exception as e:

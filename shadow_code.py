@@ -15,8 +15,8 @@ COLOR_MAP = {
     (0, 0, 255): 'door',
     (255, 255, 0): 'floor',
     (0, 255, 255): 'roof',
-    (128, 128, 128): 'wall',
-    (30, 190, 192): 'wallagg',
+    (64, 64, 64): 'wall',
+    (150, 150, 150): 'wallagg',
     (255, 0, 255): 'window',
     (0, 0, 0): 'stairs',
     (50, 200, 150): 'clutter',
@@ -24,7 +24,17 @@ COLOR_MAP = {
     (153, 0, 0): 'cable',
     (127, 0, 255): 'duct',
     (255, 153, 255): 'pipe',
-    (192, 192, 192): 'curvedagg'
+    (192, 192, 192): 'curvedagg',
+    (30, 150, 200): 'elecequip',
+    (215, 175, 30): 'fan',
+    (200, 75, 30): 'fire',
+    (35, 60, 125): 'fireequip',
+    (80, 255, 130): 'lighting',
+    (60, 35, 45): 'mechequip',
+    (230, 255, 0): 'sprinklers',
+    (255, 200, 0): 'streetlight',
+    (140, 100, 170): 'switch',
+    (150, 70, 50): 'intercom',
 }
 x_pts = None
 y_pts = None
